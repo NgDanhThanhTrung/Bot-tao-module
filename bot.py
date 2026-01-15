@@ -1,70 +1,39 @@
-import os, time, threading
-from flask import Flask
-from datetime import datetime
+import os
+import time
+import threading
+from flask import Flask, request
 from github import Github
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from waitress import serve
 
-# --- Health Check cho Render Web Service ---
-app_web = Flask(__name__)
-@app_web.route('/')
-def health(): return "Bot is live!", 200
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app_web.run(host='0.0.0.0', port=port)
-
-# --- Cấu hình ---
-TOKEN, GH_TOKEN = os.getenv("TOKEN"), os.getenv("GH_TOKEN")
+# --- CẤU HÌNH ---
+TOKEN = os.getenv("TOKEN")
+GH_TOKEN = os.getenv("GH_TOKEN")
 REPO_NAME = "NgDanhThanhTrung/locket_"
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") # URL của Render (ví dụ: https://bot-cua-ban.onrender.com)
 
-JS_TEMPLATE = """const mapping = {{
-  '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip', 'watch_vip'],
-  'Locket': ['Gold', 'com.{user}.premium.yearly']
-}};
-const ua = $request.headers["User-Agent"] || $request.headers["user-agent"];
-let obj = JSON.parse($response.body);
-obj.subscriber = obj.subscriber || {{}};
-obj.subscriber.entitlements = obj.subscriber.entitlements || {{}};
-obj.subscriber.subscriptions = obj.subscriber.subscriptions || {{}};
-const premiumInfo = {{
-  is_sandbox: false,
-  ownership_type: "PURCHASED",
-  billing_issues_detected_at: null,
-  period_type: "normal",
-  expires_date: "2999-12-18T01:04:17Z",
-  original_purchase_date: "{date}T01:04:17Z",
-  purchase_date: "{date}T01:04:17Z",
-  store: "app_store"
-}};
-const entitlementInfo = {{
-  grace_period_expires_date: null,
-  purchase_date: "{date}T01:04:17Z",
-  product_identifier: "com.{user}.premium.yearly",
-  expires_date: "2999-12-18T01:04:17Z"
-}};
-const match = Object.keys(mapping).find(e => ua.includes(e));
-if (match) {{
-  let [entKey, subKey] = mapping[match];
-  let finalSubKey = subKey || "com.{user}.premium.yearly";
-  entitlementInfo.product_identifier = finalSubKey;
-  obj.subscriber.subscriptions[finalSubKey] = premiumInfo;
-  obj.subscriber.entitlements[entKey] = entitlementInfo;
-}} else {{
-  obj.subscriber.subscriptions["com.{user}.premium.yearly"] = premiumInfo;
-  obj.subscriber.entitlements["Gold"] = entitlementInfo;
-  obj.subscriber.entitlements["pro"] = entitlementInfo;
-}}
-obj.Attention = "Chào {user}! Chúc mừng bạn đã kích hoạt thành công!";
-$done({{ body: JSON.stringify(obj) }});"""
+app_web = Flask(__name__)
+# Khởi tạo Application của Telegram
+application = ApplicationBuilder().token(TOKEN).build()
 
-MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
-#!desc=Crack By NgDanhThanhTrung
-[Script]
-revenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts$|subscribers\\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60
-deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/modules/main/LOCKET/deleteHeader.js, timeout=60
-[MITM]
-hostname = %APPEND% api.revenuecat.com"""
+# --- ROUTE XỬ LÝ WEBHOOK ---
+@app_web.route(f'/{TOKEN}', methods=['POST'])
+def telegram_webhook():
+    # Nhận dữ liệu từ Telegram gửi về
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    # Xử lý update một cách không đồng bộ
+    import asyncio
+    asyncio.run(application.process_update(update))
+    return "OK", 200
+
+@app_web.route('/')
+def health():
+    return "Bot Webhook is Live!", 200
+
+# --- LOGIC XỬ LÝ BOT (Giữ nguyên từ code cũ) ---
+JS_TEMPLATE = """...""" # Nội dung JS của bạn
+MODULE_TEMPLATE = """...""" # Nội dung Module của bạn
 
 def push_to_gh(repo, path, content, msg):
     try:
@@ -74,9 +43,10 @@ def push_to_gh(repo, path, content, msg):
         repo.create_file(path, msg, content, branch="main")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"👋 Chào {update.effective_user.first_name}!\nCú pháp: `/get user | yyyy-mm-dd`", parse_mode='Markdown')
+    await update.message.reply_text(f"👋 Chào {update.effective_user.first_name}!\nCú pháp: `/get user | yyyy-mm-dd`")
 
 async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # (Giữ nguyên logic xử lý GitHub như file cũ của bạn)
     raw_text = " ".join(context.args)
     if not raw_text or "|" not in raw_text:
         return await update.message.reply_text("⚠️ Cú pháp: `/get user | date`")
@@ -92,20 +62,24 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time.sleep(1)
         push_to_gh(repo, mod_p, MODULE_TEMPLATE.format(user=user, js_url=js_url), f"Mod {user}")
 
-        # Link được bọc trong backticks để chạm là sao chép
-        await update.message.reply_text(
-            f"✅ **Đã tạo thành công!**\n\n"
-            f"👤 User: `{user}`\n"
-            f"📅 Date: `{date}`\n\n"
-            f"🔗 **Link Module (Chạm để sao chép):**\n`{mod_url}`",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"✅ Thành công!\n🔗 Link: `{mod_url}`", parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
+# Đăng ký handler
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("get", get_bundle))
+
 if __name__ == '__main__':
-    threading.Thread(target=run_flask, daemon=True).start()
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("get", get_bundle))
-    app.run_polling()
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Thiết lập Webhook với Telegram
+    if RENDER_URL:
+        webhook_path = f"{RENDER_URL}/{TOKEN}"
+        # Chạy một thread nhỏ để set webhook khi khởi động
+        import asyncio
+        asyncio.run(application.bot.set_webhook(webhook_path))
+        print(f"Webhook set to: {webhook_path}")
+    
+    # Chạy Flask server bằng Waitress
+    serve(app_web, host='0.0.0.0', port=port)
