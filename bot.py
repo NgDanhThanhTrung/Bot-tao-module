@@ -17,7 +17,7 @@ app_web = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).build()
 main_loop = None
 
-# --- KHUÔN MẪU JS (Giữ nguyên 2999-12-18, thay user và date mua hàng) ---
+# --- KHUÔN MẪU JS ---
 JS_TEMPLATE = """// ========= ID ========= //
 const mapping = {{
   '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip+watch_vip'],
@@ -67,9 +67,9 @@ MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
 
 [Script]
 # ~ By {user}
-revenuecat = type=http-response, pattern=^https:\/\/api\.revenuecat\.com\/.+\/(receipts$|subscribers\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60
+revenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts$|subscribers\\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60
 
-deleteHeader = type=http-request, pattern=^https:\/\/api\.revenuecat\.com\/.+\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/locket_/main/Locket_NDTT/deleteHeader.js, timeout=60
+deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/locket_/main/Locket_NDTT/deleteHeader.js, timeout=60
 
 [MITM]
 hostname = %APPEND% api.revenuecat.com"""
@@ -81,13 +81,33 @@ def push_to_gh(repo, path, content, msg):
     except Exception:
         repo.create_file(path, msg, content, branch="main")
 
+# --- LỆNH /START ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"👋 Chào {update.effective_user.first_name}!\nCú pháp: `/get user | yyyy-mm-dd`")
+    await update.message.reply_text(
+        f"👋 Chào {update.effective_user.first_name}!\n"
+        "Tôi là Bot tạo Module Locket Gold cá nhân hóa.\n\n"
+        "Sử dụng lệnh: `/get user | yyyy-mm-dd`\n"
+        "Ví dụ: `/get trung | 2025-01-16`\n\n"
+        "Gõ /hdsd để xem hướng dẫn chi tiết.",
+        parse_mode='Markdown'
+    )
 
+# --- LỆNH /HDSD ---
+async def hdsd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "📖 **HƯỚNG DẪN SỬ DỤNG**\n\n"
+        "Cú pháp: `/get <tên> | <năm-tháng-ngày>`\n\n"
+        "1. **Tên**: Sẽ thay thế cho các biến trong code JS và tên Module.\n"
+        "2. **Ngày**: Sẽ là ngày bắt đầu mua (purchase_date). Hạn dùng mặc định là 2999.\n\n"
+        "Ví dụ: `/get locket_user | 2025-01-16`"
+    )
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+# --- LỆNH /GET ---
 async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = " ".join(context.args)
     if not raw_text or "|" not in raw_text:
-        return await update.message.reply_text("⚠️ Cú pháp: `/get user | date` (Ví dụ: /get trung | 2025-01-16)")
+        return await update.message.reply_text("⚠️ Cú pháp: `/get user | yyyy-mm-dd`")
     
     try:
         user, date = [p.strip() for p in raw_text.split("|")]
@@ -96,7 +116,6 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
         
-        # Format nội dung
         final_js = JS_TEMPLATE.format(user=user, date=date)
         final_mod = MODULE_TEMPLATE.format(user=user, js_url=js_raw_url)
 
@@ -109,7 +128,9 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
+# Đăng ký handler
 application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("hdsd", hdsd))
 application.add_handler(CommandHandler("get", get_bundle))
 
 @app_web.route(f'/{TOKEN}', methods=['POST'])
