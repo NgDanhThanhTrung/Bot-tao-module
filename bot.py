@@ -104,7 +104,7 @@ async def hdsd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = " ".join(context.args)
     if "|" not in raw_text:
-        return await update.message.reply_text("⚠️ Gõ theo mẫu: `/get trung | 2025-01-16`")
+        return await update.message.reply_text("⚠️ Gõ theo mẫu: `/get ngdanhthanhtrung | 2024-01-16`")
     
     try:
         user, date = [p.strip() for p in raw_text.split("|")]
@@ -139,5 +139,5 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler("hdsd", hdsd))
     application.add_handler(CommandHandler("get", get_bundle))
 
-    print("🚀 Bot is starting via Polling...")
+    print("🚀 Bot Tạo Modules đã hoạt động...")
     application.run_polling(drop_pending_updates=True)
