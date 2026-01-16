@@ -17,7 +17,7 @@ app_web = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).build()
 main_loop = None
 
-# --- KHUÔN MẪU JS (Giữ nguyên dấu / theo file Locket_Gold.js của bạn) ---
+# --- KHUÔN MẪU JS ---
 JS_TEMPLATE = """// ========= ID ========= //
 const mapping = {{
   '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip+watch_vip'],
@@ -61,7 +61,7 @@ if(match){{
 
 $done({{body:JSON.stringify(obj)}});"""
 
-# --- KHUÔN MẪU MODULE (Giữ nguyên dấu \\/ từ file Locket_NDTT.sgmodule) ---
+# --- KHUÔN MẪU MODULE ---
 MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
 #!desc=Crack By {user} (Hết hạn: 2999-12-18)
 
@@ -81,33 +81,17 @@ def push_to_gh(repo, path, content, msg):
     except Exception:
         repo.create_file(path, msg, content, branch="main")
 
-# --- LỆNH /START ---
+# --- LỆNH BOT ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"👋 Chào {update.effective_user.first_name}!\n"
-        "Tôi là Bot tạo Module Locket Gold cá nhân hóa.\n\n"
-        "Sử dụng lệnh: `/get user | yyyy-mm-dd`\n"
-        "Ví dụ: `/get trung | 2025-01-16`\n\n"
-        "Gõ /hdsd để xem hướng dẫn chi tiết.",
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text("👋 Bot đã sẵn sàng!\nGõ /hdsd để xem cách dùng.")
 
-# --- LỆNH /HDSD ---
 async def hdsd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "📖 **HƯỚNG DẪN SỬ DỤNG**\n\n"
-        "Cú pháp: `/get <tên> | <năm-tháng-ngày>`\n\n"
-        "1. **Tên**: Sẽ thay thế `{user}` trong script.\n"
-        "2. **Ngày**: Sẽ thay thế ngày mua `{date}`.\n\n"
-        "Hạn dùng mặc định: 2999-12-18."
-    )
-    await update.message.reply_text(text, parse_mode='Markdown')
+    await update.message.reply_text("Cú pháp: `/get user | yyyy-mm-dd`", parse_mode='Markdown')
 
-# --- LỆNH /GET ---
 async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = " ".join(context.args)
-    if not raw_text or "|" not in raw_text:
-        return await update.message.reply_text("⚠️ Cú pháp: `/get user | yyyy-mm-dd`")
+    if "|" not in raw_text:
+        return await update.message.reply_text("⚠️ Gõ theo mẫu: `/get trung | 2025-01-16`")
     
     try:
         user, date = [p.strip() for p in raw_text.split("|")]
@@ -115,20 +99,15 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         js_raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
 
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
-        
-        final_js = JS_TEMPLATE.format(user=user, date=date)
-        final_mod = MODULE_TEMPLATE.format(user=user, js_url=js_raw_url)
-
-        push_to_gh(repo, js_p, final_js, f"JS {user}")
+        push_to_gh(repo, js_p, JS_TEMPLATE.format(user=user, date=date), f"JS {user}")
         time.sleep(1)
-        push_to_gh(repo, mod_p, final_mod, f"Mod {user}")
+        push_to_gh(repo, mod_p, MODULE_TEMPLATE.format(user=user, js_url=js_raw_url), f"Mod {user}")
 
-        mod_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}"
-        await update.message.reply_text(f"✅ Thành công!\n🔗 Link: `{mod_url}`", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ Xong! Link: `https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}`", parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
-# Đăng ký handler
+# --- WEBHOOK & APP ---
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("hdsd", hdsd))
 application.add_handler(CommandHandler("get", get_bundle))
@@ -141,20 +120,20 @@ def telegram_webhook():
     return "OK", 200
 
 @app_web.route('/')
-def health():
-    return "Bot is Live!", 200
+def health(): return "OK", 200
 
 async def setup_bot():
     await application.initialize()
     await application.start()
     if RENDER_URL:
-        webhook_url = f"{RENDER_URL}/{TOKEN}"
-        await application.bot.set_webhook(webhook_url)
+        # Tự động xóa Webhook cũ trước khi đặt mới để tránh nghẽn
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        await application.bot.set_webhook(f"{RENDER_URL}/{TOKEN}")
+        print(f"Webhook set to: {RENDER_URL}/{TOKEN}")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     main_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(main_loop)
     main_loop.run_until_complete(setup_bot())
-    print(f"Server is starting on port {port}...")
     serve(app_web, host='0.0.0.0', port=port, threads=8)
