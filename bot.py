@@ -12,21 +12,21 @@ TOKEN = os.getenv("TOKEN")
 GH_TOKEN = os.getenv("GH_TOKEN")
 REPO_NAME = "NgDanhThanhTrung/locket_"
 
-# --- SERVER DUY TRÌ PORT (THAY THẾ FLASK/WAITRESS) ---
+# --- SERVER DUY TRÌ PORT ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
+        self.send_header('Content-type', 'text/plain; charset=utf-8')
         self.end_headers()
-        self.wfile.write(b"Bot is running via Polling!")
+        self.wfile.write("Bot đang chạy ở chế độ Polling!".encode('utf-8'))
 
     def log_message(self, format, *args):
-        return  # Vô hiệu hóa log để tránh làm rác console
+        return  
 
 def run_health_server():
     port = int(os.environ.get("PORT", 8000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"✅ Health Check Server started on port {port}")
+    print(f"✅ Health Check Server đã khởi chạy trên Port: {port}")
     server.serve_forever()
 
 # --- KHUÔN MẪU JS ---
@@ -49,25 +49,25 @@ var {user}={{
   expires_date:"2999-12-18T01:04:17Z",
   grace_period_expires_date:null,
   unsubscribe_detected_at:null,
-  original_purchase_date:"{date}T01:04:18Z",
-  purchase_date:"{date}T01:04:17Z",
-  store:"app_store"
+  original_purchase_date:\"{date}T01:04:18Z\",
+  purchase_date:\"{date}T01:04:17Z\",
+  store:\"app_store\"
 }};
 
 var {user}_sub={{
   grace_period_expires_date:null,
-  purchase_date:"{date}T01:04:17Z",
-  product_identifier:"com.{user}.premium.yearly",
-  expires_date:"2999-12-18T01:04:17Z"
+  purchase_date:\"{date}T01:04:17Z\",
+  product_identifier:\"com.{user}.premium.yearly\",
+  expires_date:\"2999-12-18T01:04:17Z\"
 }};
 
 const match=Object.keys(mapping).find(e=>ua.includes(e));
 
 if(match){{
   let[e,s]=mapping[match];
-  s?({user}_sub.product_identifier=s,obj.subscriber.subscriptions[s]={user}):obj.subscriber.subscriptions["com.{user}.premium.yearly"]={user},obj.subscriber.entitlements[e]={user}_sub
+  s?({user}_sub.product_identifier=s,obj.subscriber.subscriptions[s]={user}):obj.subscriber.subscriptions[\"com.{user}.premium.yearly\"]={user},obj.subscriber.entitlements[e]={user}_sub
 }}else{{
-  obj.subscriber.subscriptions["com.{user}.premium.yearly"]={user};
+  obj.subscriber.subscriptions[\"com.{user}.premium.yearly\"]={user};
   obj.subscriber.entitlements.pro={user}_sub
 }}
 
@@ -96,48 +96,56 @@ def push_to_gh(repo, path, content, msg):
 
 # --- LỆNH BOT ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Bot đã sẵn sàng!\nGõ /hdsd để xem cách dùng.")
+    await update.message.reply_text("👋 Bot đã sẵn sàng!\nGõ /hdsd để xem hướng dẫn.")
 
 async def hdsd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Cú pháp: `/get user | yyyy-mm-dd`", parse_mode='Markdown')
+    await update.message.reply_text("Cú pháp: `/get user | yyyy-mm-dd`\nVí dụ: `/get ndtt | 2025-01-16`", parse_mode='Markdown')
 
 async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = " ".join(context.args)
     if "|" not in raw_text:
-        return await update.message.reply_text("⚠️ Gõ theo mẫu: `/get ngdanhthanhtrung | 2024-01-16`")
+        return await update.message.reply_text("⚠️ Sai cú pháp! Gõ mẫu: `/get trung | 2025-01-16`")
     
     try:
         user, date = [p.strip() for p in raw_text.split("|")]
         js_p, mod_p = f"{user}/Locket_Gold.js", f"{user}/Locket_{user}.sgmodule"
         js_raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
 
-        # Gửi thông báo đang xử lý
-        status_msg = await update.message.reply_text("⏳ Đang tạo file và upload Github...")
+        status_msg = await update.message.reply_text("⏳ Đang xử lý GitHub...")
 
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
         
-        # Upload JS
         push_to_gh(repo, js_p, JS_TEMPLATE.format(user=user, date=date), f"JS {user}")
         await asyncio.sleep(1)
         
-        # Upload Module
         push_to_gh(repo, mod_p, MODULE_TEMPLATE.format(user=user, js_url=js_raw_url), f"Mod {user}")
 
-        await status_msg.edit_text(f"✅ Xong!\nLink: `https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}`", parse_mode='Markdown')
+        await status_msg.edit_text(f"✅ Thành công!\nLink: `https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}`", parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
-# --- KHỞI CHẠY ---
-if __name__ == '__main__':
-    # 1. Chạy Health Server ở luồng phụ để "nuôi" Render
-    threading.Thread(target=run_health_server, daemon=True).start()
-
-    # 2. Cấu hình và chạy Bot Telegram ở luồng chính (Polling)
+# --- KHỞI CHẠY CHÍNH ---
+async def main():
     application = ApplicationBuilder().token(TOKEN).build()
-    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("hdsd", hdsd))
     application.add_handler(CommandHandler("get", get_bundle))
 
-    print("🚀 Bot Tạo Modules đã hoạt động...")
-    application.run_polling(drop_pending_updates=True)
+    # 3. XỬ LÝ WEBHOOK & CONFLICT:
+    print("🧹 Đang dọn dẹp Webhook cũ...")
+    await application.bot.delete_webhook(drop_pending_updates=True)
+    await asyncio.sleep(1)
+
+    # 4. Bắt đầu Polling
+    print("🚀 Bot đang bắt đầu nhận tin nhắn (Polling)...")
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(drop_pending_updates=True)
+    await asyncio.Event().wait()
+
+if __name__ == '__main__':
+    threading.Thread(target=run_health_server, daemon=True).start()
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Bot đã dừng.")
