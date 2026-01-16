@@ -1,7 +1,6 @@
 import os
 import time
 import asyncio
-import threading
 from flask import Flask, request
 from github import Github
 from telegram import Update
@@ -15,11 +14,13 @@ REPO_NAME = "NgDanhThanhTrung/locket_"
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") 
 
 app_web = Flask(__name__)
-
-# Khởi tạo Application của Telegram
+# Khởi tạo Application
 application = ApplicationBuilder().token(TOKEN).build()
 
-# --- LOGIC XỬ LÝ GITHUB ---
+# Biến toàn cục để lưu loop chính
+main_loop = None
+
+# --- TEMPLATE ---
 JS_TEMPLATE = """// JS Content for {user} - Date: {date}"""
 MODULE_TEMPLATE = """// Module for {user} - JS: {js_url}"""
 
@@ -54,48 +55,40 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
-# Đăng ký handler vào application
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("get", get_bundle))
 
-# --- ROUTE XỬ LÝ WEBHOOK ---
+# --- ROUTE WEBHOOK ---
 @app_web.route(f'/{TOKEN}', methods=['POST'])
 def telegram_webhook():
-    """Nhận và xử lý dữ liệu từ Telegram gửi về."""
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        # Sử dụng loop chính để xử lý update, tránh lỗi Runtime
-        loop = asyncio.get_event_loop()
-        loop.create_task(application.process_update(update))
-        return "OK", 200
-    return "Forbidden", 403
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    # Ép buộc chạy trên loop chính đã khởi tạo
+    if main_loop and main_loop.is_running():
+        main_loop.call_soon_threadsafe(lambda: asyncio.create_task(application.process_update(update)))
+    return "OK", 200
 
 @app_web.route('/')
 def health():
     return "Bot Webhook is Live!", 200
 
-# --- KHỞI CHẠY HỆ THỐNG ---
+# --- KHỞI CHẠY ---
 async def setup_bot():
-    """Khởi tạo trạng thái bot và thiết lập Webhook."""
     await application.initialize()
     await application.start()
     if RENDER_URL:
         webhook_url = f"{RENDER_URL}/{TOKEN}"
         await application.bot.set_webhook(webhook_url)
-        print(f"✅ Webhook đã được set: {webhook_url}")
+        print(f"✅ Webhook set: {webhook_url}")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     
-    # 1. Chạy tiến trình khởi tạo bot
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # Thiết lập và lưu loop chính
+    main_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(main_loop)
+    main_loop.run_until_complete(setup_bot())
     
-    loop.run_until_complete(setup_bot())
-    
-    # 2. Chạy Flask server bằng Waitress
-    print(f"🚀 Server đang chạy tại cổng {port}...")
-    serve(app_web, host='0.0.0.0', port=port)
+    # Chạy Waitress trong một thread riêng hoặc chạy Flask trực tiếp
+    # Để đơn giản và tránh lỗi loop, ta chạy Flask/Waitress ở đây
+    print(f"🚀 Server khởi hành trên port {port}...")
+    serve(app_web, host='0.0.0.0', port=port, threads=4)
