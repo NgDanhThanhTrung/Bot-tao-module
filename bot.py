@@ -22,7 +22,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args): return
 
 def run_health_server():
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
