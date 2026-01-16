@@ -17,7 +17,7 @@ app_web = Flask(__name__)
 application = ApplicationBuilder().token(TOKEN).build()
 main_loop = None
 
-# --- KHUÔN MẪU JS ---
+# --- KHUÔN MẪU JS (Giữ nguyên dấu / theo file Locket_Gold.js của bạn) ---
 JS_TEMPLATE = """// ========= ID ========= //
 const mapping = {{
   '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip+watch_vip'],
@@ -53,7 +53,7 @@ const match=Object.keys(mapping).find(e=>ua.includes(e));
 
 if(match){{
   let[e,s]=mapping[match];
-  s?( {user}_sub.product_identifier=s,obj.subscriber.subscriptions[s]={user} ):obj.subscriber.subscriptions["com.{user}.premium.yearly"]={user},obj.subscriber.entitlements[e]={user}_sub
+  s?({user}_sub.product_identifier=s,obj.subscriber.subscriptions[s]={user}):obj.subscriber.subscriptions["com.{user}.premium.yearly"]={user},obj.subscriber.entitlements[e]={user}_sub
 }}else{{
   obj.subscriber.subscriptions["com.{user}.premium.yearly"]={user};
   obj.subscriber.entitlements.pro={user}_sub
@@ -61,7 +61,7 @@ if(match){{
 
 $done({{body:JSON.stringify(obj)}});"""
 
-# --- KHUÔN MẪU MODULE ---
+# --- KHUÔN MẪU MODULE (Giữ nguyên dấu \\/ từ file Locket_NDTT.sgmodule) ---
 MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
 #!desc=Crack By {user} (Hết hạn: 2999-12-18)
 
@@ -97,9 +97,9 @@ async def hdsd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📖 **HƯỚNG DẪN SỬ DỤNG**\n\n"
         "Cú pháp: `/get <tên> | <năm-tháng-ngày>`\n\n"
-        "1. **Tên**: Sẽ thay thế cho các biến trong code JS và tên Module.\n"
-        "2. **Ngày**: Sẽ là ngày bắt đầu mua (purchase_date). Hạn dùng mặc định là 2999.\n\n"
-        "Ví dụ: `/get locket_user | 2025-01-16`"
+        "1. **Tên**: Sẽ thay thế `{user}` trong script.\n"
+        "2. **Ngày**: Sẽ thay thế ngày mua `{date}`.\n\n"
+        "Hạn dùng mặc định: 2999-12-18."
     )
     await update.message.reply_text(text, parse_mode='Markdown')
 
