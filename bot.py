@@ -1,21 +1,33 @@
 import os
-import time
 import asyncio
-from flask import Flask, request
+import threading
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from github import Github
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from waitress import serve
 
-# --- CẤU HÌNH ---
+# --- CẤU HÌNH BIẾN MÔI TRƯỜNG ---
 TOKEN = os.getenv("TOKEN")
 GH_TOKEN = os.getenv("GH_TOKEN")
 REPO_NAME = "NgDanhThanhTrung/locket_"
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") 
 
-app_web = Flask(__name__)
-application = ApplicationBuilder().token(TOKEN).build()
-main_loop = None
+# --- SERVER DUY TRÌ PORT (THAY THẾ FLASK/WAITRESS) ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Bot is running via Polling!")
+
+    def log_message(self, format, *args):
+        return  # Vô hiệu hóa log để tránh làm rác console
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 8000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"✅ Health Check Server started on port {port}")
+    server.serve_forever()
 
 # --- KHUÔN MẪU JS ---
 JS_TEMPLATE = """// ========= ID ========= //
@@ -74,6 +86,7 @@ deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/
 [MITM]
 hostname = %APPEND% api.revenuecat.com"""
 
+# --- HÀM XỬ LÝ GITHUB ---
 def push_to_gh(repo, path, content, msg):
     try:
         f = repo.get_contents(path, ref="main")
@@ -98,42 +111,33 @@ async def get_bundle(update: Update, context: ContextTypes.DEFAULT_TYPE):
         js_p, mod_p = f"{user}/Locket_Gold.js", f"{user}/Locket_{user}.sgmodule"
         js_raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
 
+        # Gửi thông báo đang xử lý
+        status_msg = await update.message.reply_text("⏳ Đang tạo file và upload Github...")
+
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
+        
+        # Upload JS
         push_to_gh(repo, js_p, JS_TEMPLATE.format(user=user, date=date), f"JS {user}")
-        time.sleep(1)
+        await asyncio.sleep(1)
+        
+        # Upload Module
         push_to_gh(repo, mod_p, MODULE_TEMPLATE.format(user=user, js_url=js_raw_url), f"Mod {user}")
 
-        await update.message.reply_text(f"✅ Xong! Link: `https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}`", parse_mode='Markdown')
+        await status_msg.edit_text(f"✅ Xong!\nLink: `https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}`", parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
-# --- WEBHOOK & APP ---
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("hdsd", hdsd))
-application.add_handler(CommandHandler("get", get_bundle))
-
-@app_web.route(f'/{TOKEN}', methods=['POST'])
-def telegram_webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    if main_loop and main_loop.is_running():
-        main_loop.call_soon_threadsafe(lambda: asyncio.create_task(application.process_update(update)))
-    return "OK", 200
-
-@app_web.route('/')
-def health(): return "OK", 200
-
-async def setup_bot():
-    await application.initialize()
-    await application.start()
-    if RENDER_URL:
-        # Tự động xóa Webhook cũ trước khi đặt mới để tránh nghẽn
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        await application.bot.set_webhook(f"{RENDER_URL}/{TOKEN}")
-        print(f"Webhook set to: {RENDER_URL}/{TOKEN}")
-
+# --- KHỞI CHẠY ---
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))
-    main_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(main_loop)
-    main_loop.run_until_complete(setup_bot())
-    serve(app_web, host='0.0.0.0', port=port, threads=8)
+    # 1. Chạy Health Server ở luồng phụ để "nuôi" Render
+    threading.Thread(target=run_health_server, daemon=True).start()
+
+    # 2. Cấu hình và chạy Bot Telegram ở luồng chính (Polling)
+    application = ApplicationBuilder().token(TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("hdsd", hdsd))
+    application.add_handler(CommandHandler("get", get_bundle))
+
+    print("🚀 Bot is starting via Polling...")
+    application.run_polling(drop_pending_updates=True)
